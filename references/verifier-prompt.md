@@ -18,6 +18,21 @@ Verify:
 2. SPECIFIC_CHECK_2  (name the probe/command that would settle it, if one exists)
 3. SPECIFIC_CHECK_3  (name what would change the severity up or down)
 
+For each check, also state its REFUTATION CONDITION — the concrete fact that,
+if found, kills the candidate (e.g. "if the host installs an
+unhandledRejection handler, the process-death consequence is refuted"). Checks
+written this way come back with sharp verdicts; open-ended checks come back
+with essays.
+
+Environment facts that will bite you:
+- The review worktree has NO node_modules. To run code, symlink the main
+  repo's node_modules into your scratch dir, or run via the main repo's
+  tooling — never npm-install into the worktree.
+- The main repo's dist/ (and its checked-out branch) may not match the PR
+  head. State which build/ref every probe actually ran against.
+- git fetch every repo you read, and read the DEPLOYED ref (origin/main, the
+  ref an image tag names) — a local checkout's current branch is meaningless.
+
 Verdict rules:
 - PLAUSIBLE is the default. Do not refute a candidate for being "speculative"
   or "depends on runtime state" when that state is realistic: races,

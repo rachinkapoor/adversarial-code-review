@@ -21,7 +21,11 @@ survived. This split matters: a single agent doing both jobs either misses bugs
    - Branch → diff it against its base.
    - Nothing given → `git diff @{upstream}...HEAD`, plus `git diff HEAD` if there are
      uncommitted changes.
-2. `git fetch origin` first. Never review a stale local clone.
+2. `git fetch origin` first — in the target repo AND in every related repo you will
+   read (consumers, infra, bridge). Then read the DEPLOYED ref (`origin/main`,
+   the branch an image tag points at), never the local checkout's current
+   branch: local clones sit on random feature branches and will hand you wrong
+   file states and wrong deployed versions.
 3. Save the full diff to a scratch file. Read it yourself, top to bottom, before
    launching anything. You need your own picture of the change to judge agent output later.
 4. Create a worktree of the head commit so agents can read whole files, not just hunks:
@@ -65,14 +69,24 @@ Tell every finder: **pass through every candidate you can name a failure for.
 Do not silently drop half-believed candidates.** Finders that self-censor bypass
 the verify step and are the main cause of missed bugs.
 
+While the finders run, do NOT idle. Spend the window on Phase-0 work only you
+can do: verify the PR description's own claims, check the deployment/infra
+repos for what production actually runs, and map the rollout order (what
+auto-deploys, what needs a human). Deployment-gap findings usually come from
+this window, not from the finders.
+
 ## Phase 2 — Dedup, then verify (one agent per candidate)
 
 1. Dedup: same defect + same location + same reason → keep one. Overlapping
    candidates from different angles usually mean the finding is real — merge
    them, keep the strongest failure scenario.
-2. Self-verify only trivial candidates where the diff text alone is proof
-   (e.g. a comment citing a file you already proved absent). Everything else
-   gets its own verifier agent.
+2. CUT before verifying — 8 finders × 6 candidates can be ~40+, and the report
+   caps at 10. Budget roughly 10–14 verifier agents: correctness candidates
+   first, then the one or two cleanup candidates that could change the verdict.
+   Self-verify the trivial ones where the diff text alone is proof (a comment
+   citing a file you already proved absent, a literal duplicate block), and
+   carry the remaining cleanup candidates to the report unverified, marked as
+   such, below the verified findings.
 3. Launch one verifier per candidate, parallel, background, strong model, using
    the template in [references/verifier-prompt.md](references/verifier-prompt.md).
    Each returns exactly one verdict:
@@ -110,6 +124,16 @@ the verify step and are the main cause of missed bugs.
    without paying/breaking anything is a different verdict than one that
    silently corrupts.
 7. Do not volunteer merge/hold advice unless asked. The review ends at the findings.
+8. A verified bug that is OUTSIDE the diff (pre-existing, found on the way) is
+   reported in its own short section after the findings, outside the 10-cap —
+   never ranked against the PR's own defects, never silently dropped.
+
+## Cleanup
+
+When the review is done, remove the worktree YOU created:
+`git worktree remove --force <your-worktree-path>`. Never run
+`git worktree prune` — it silently deletes other sessions' stale worktrees.
+Delete any throwaway probe scripts from the scratch directory.
 
 ## Phase 4 — PR comments (only when asked)
 

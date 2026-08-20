@@ -128,4 +128,9 @@ file INSIDE the repo (a directory's rules apply only at or below it). Read each
 one that exists, then check the diff for CLEAR violations. Only flag when you
 can quote the exact rule and the exact diff line breaking it — no style
 preferences, no "spirit of the doc". If no rule file applies, return "none".
+
+Workspace- or user-level rule files (outside the repo) are context, not law:
+use them to sharpen what you look for (e.g. a house rule that hand-built test
+inputs don't prove the producer), but only a rule INSIDE the repo can be cited
+as a violation.
 ```
