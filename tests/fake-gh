@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# Stand-in for the gh CLI. The helper scripts call ${GH:-gh}, so the test suite
+# points GH here and also puts a `gh` symlink to this file first on PATH, which
+# makes a real network call impossible.
+#
+# Fixtures and recordings live in $FAKE_GH_DIR:
+#   pr-<n>.json        answer for `pr view <n> --json ...`
+#   repo.json          answer for `repo view --json ...`
+#   comments.json      optional answer for the review-comments listing
+#   calls.log          every invocation, one per line
+#   posted.json        the body handed to `api .../pulls/<n>/reviews --input`
+#
+# Supported:
+#   gh pr view <n|url> --json <fields> [--jq <expr>]
+#   gh repo view --json <fields> [--jq <expr>]
+#   gh api repos/<o>/<r>/pulls/<n>/reviews --input <file|->
+#   gh api repos/<o>/<r>/pulls/<n>/comments[?...] [--jq <expr>]
+# Everything else exits 1.
+
+set -u
+
+ARGS="$*"
+
+die() { echo "fake-gh: $1" >&2; exit 1; }
+unsupported() { echo "fake-gh: unsupported invocation: $ARGS" >&2; exit 1; }
+
+DIR="${FAKE_GH_DIR:-}"
+[ -n "$DIR" ] || die "FAKE_GH_DIR is not set"
+mkdir -p "$DIR"
+{ printf 'gh'; for a in "$@"; do printf ' %s' "$a"; done; printf '\n'; } >> "$DIR/calls.log"
+
+# Keep only the requested --json fields, the way gh does.
+filter_fields() {
+  if [ -z "$2" ]; then
+    cat "$1"
+  else
+    jq --arg f "$2" \
+      'with_entries(select(.key as $k | ($f | split(",")) | index($k) != null))' "$1"
+  fi
+}
+
+emit() { # <file> <fields> <jq expr>
+  if [ -n "$3" ]; then
+    filter_fields "$1" "$2" | jq -r "$3"
+  else
+    filter_fields "$1" "$2"
+  fi
+}
+
+[ $# -gt 0 ] || unsupported
+cmd="$1"; shift
+
+case "$cmd" in
+  --version|version)
+    echo "gh version 0.0.0 (fake)"
+    exit 0
+    ;;
+
+  pr)
+    [ $# -gt 0 ] || unsupported
+    sub="$1"; shift
+    [ "$sub" = "view" ] || unsupported
+    num=""; fields=""; jqexpr=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --json)      [ $# -ge 2 ] || unsupported; fields="$2"; shift 2 ;;
+        --jq|-q)     [ $# -ge 2 ] || unsupported; jqexpr="$2"; shift 2 ;;
+        -R|--repo)   [ $# -ge 2 ] || unsupported; shift 2 ;;
+        --)          shift ;;
+        -*)          unsupported ;;
+        *)           num="$1"; shift ;;
+      esac
+    done
+    num="${num##*/}"            # a PR URL ends in the number
+    [ -n "$num" ] || die "pr view without a PR number"
+    f="$DIR/pr-$num.json"
+    [ -f "$f" ] || die "no fixture for PR $num"
+    emit "$f" "$fields" "$jqexpr"
+    ;;
+
+  repo)
+    [ $# -gt 0 ] || unsupported
+    sub="$1"; shift
+    [ "$sub" = "view" ] || unsupported
+    fields=""; jqexpr=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --json)      [ $# -ge 2 ] || unsupported; fields="$2"; shift 2 ;;
+        --jq|-q)     [ $# -ge 2 ] || unsupported; jqexpr="$2"; shift 2 ;;
+        -R|--repo)   [ $# -ge 2 ] || unsupported; shift 2 ;;
+        --)          shift ;;
+        -*)          unsupported ;;
+        *)           shift ;;
+      esac
+    done
+    f="$DIR/repo.json"
+    [ -f "$f" ] || die "no repo.json fixture"
+    emit "$f" "$fields" "$jqexpr"
+    ;;
+
+  api)
+    path=""; input=""; jqexpr=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --input)                      [ $# -ge 2 ] || unsupported; input="$2"; shift 2 ;;
+        --jq|-q)                      [ $# -ge 2 ] || unsupported; jqexpr="$2"; shift 2 ;;
+        -X|--method)                  [ $# -ge 2 ] || unsupported; shift 2 ;;
+        -H|--header|-f|--raw-field|-F|--field) [ $# -ge 2 ] || unsupported; shift 2 ;;
+        --paginate|--silent|--include) shift ;;
+        --)                           shift ;;
+        -*)                           unsupported ;;
+        *)                            path="$1"; shift ;;
+      esac
+    done
+    [ -n "$path" ] || unsupported
+    case "$path" in
+      repos/*/pulls/*/reviews)
+        [ -n "$input" ] || die "reviews POST without --input"
+        if [ "$input" = "-" ]; then
+          cat > "$DIR/posted.json"
+        else
+          [ -f "$input" ] || die "--input file not found: $input"
+          cp "$input" "$DIR/posted.json"
+        fi
+        jq -e . "$DIR/posted.json" >/dev/null 2>&1 || die "review body is not valid JSON"
+        commit=$(jq -r '.commit_id // ""' "$DIR/posted.json")
+        cat > "$DIR/review-response.json" <<JSON
+{
+  "id": 987654321,
+  "node_id": "PRR_fake",
+  "state": "COMMENTED",
+  "commit_id": "$commit",
+  "html_url": "https://example.invalid/fake/fake/pull/0#pullrequestreview-987654321"
+}
+JSON
+        if [ -n "$jqexpr" ]; then jq -r "$jqexpr" "$DIR/review-response.json"; else cat "$DIR/review-response.json"; fi
+        ;;
+      repos/*/pulls/*/comments*)
+        if [ -f "$DIR/comments.json" ]; then
+          src="$DIR/comments.json"
+        elif [ -f "$DIR/posted.json" ]; then
+          # Model the listing on what was actually posted.
+          jq '[ (.comments // []) | to_entries[]
+                | .key as $i | .value as $c
+                | { id: (100 + $i),
+                    path: $c.path,
+                    line: $c.line,
+                    start_line: ($c.start_line // null),
+                    side: ($c.side // "RIGHT"),
+                    start_side: ($c.start_side // null),
+                    body: $c.body } ]' "$DIR/posted.json" > "$DIR/comments-derived.json"
+          src="$DIR/comments-derived.json"
+        else
+          die "no comments fixture and nothing posted yet"
+        fi
+        if [ -n "$jqexpr" ]; then jq -r "$jqexpr" "$src"; else cat "$src"; fi
+        ;;
+      *)
+        unsupported
+        ;;
+    esac
+    ;;
+
+  *)
+    unsupported
+    ;;
+esac
