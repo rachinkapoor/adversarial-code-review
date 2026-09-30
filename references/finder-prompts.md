@@ -66,8 +66,7 @@ permission that a caller can skip, a secret or credential added to the diff.
 
 Lifecycle windows. If the diff touches a teardown, rebuild or swap path: for
 every field it clears (null, undefined, delete, clear) or replaces, find
-every reader of it and probe (example: a `rebuildComponents` that sets
-`handle.dsl` to null, then commits a new one):
+every reader of it and probe:
 - the gap between teardown and commit, including lock waits and network calls;
 - work that runs after commit but outside the lock (a module start, a
   scheduled callback);
