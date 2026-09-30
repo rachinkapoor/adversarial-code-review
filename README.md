@@ -17,7 +17,7 @@ Then in any session: `/adversarial-code-review <PR link | branch | nothing for w
 ## Layout
 
 ```
-SKILL.md                       — the pipeline (scope → find → verify → report → comment → cleanup)
+SKILL.md                       — the pipeline (scope → find → verify → report → comment → fix → cleanup)
 references/finder-prompts.md   — the 8 finder angle templates, plus substitutions for config-only diffs
 references/verifier-prompt.md  — the verifier template + verdict rules
 references/posting-comments.md — PR comment mechanics + suggestion blocks

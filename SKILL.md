@@ -90,10 +90,14 @@ retype their git commands by hand — past reviews got exactly these steps wrong
      production? (env vars, values files, migrations)
    Add a worktree for each with `add-repo.sh`. Finders and verifiers get the
    worktree paths, not the clone paths.
-5. Read the PR description (`meta.body`). If it makes claims ("tests pass",
+5. Read the task folder the user keeps for this work, if one exists: its
+   decisions file, progress file and spec. A behavior the user already
+   decided is not a finding; past reviews raised two such decisions as
+   defects. Carry each settled decision into `context.md`.
+6. Read the PR description (`meta.body`). If it makes claims ("tests pass",
    "no conflicts", "byte-identical"), treat them as candidates to verify, not
    facts.
-6. Write `$REVIEW_DIR/context.md`, the block every agent prompt embeds. Two
+7. Write `$REVIEW_DIR/context.md`, the block every agent prompt embeds. Three
    sections, ten to thirty lines in all:
    - **Invariants** — true in every environment, each with the file that
      proves it: which service creates or owns a resource, which service is
@@ -105,10 +109,12 @@ retype their git commands by hand — past reviews got exactly these steps wrong
      deployment repo for that environment, established now, for this
      review. Never copy this from an earlier review or a static file: a
      feature can be live in one environment and absent in the next.
+   - **Settled decisions** — product and design calls the user already made
+     for this work, from step 5. Agents do not raise them as findings.
    Anything an agent will need that neither source settles: ask the user
    now, one line, before launching agents, and write the answer into the
    block.
-7. The ledger is `$REVIEW_DIR/candidates.md`, managed by `scripts/ledger.sh`
+8. The ledger is `$REVIEW_DIR/candidates.md`, managed by `scripts/ledger.sh`
    (`add`, `set`, `list`). Long reviews get context-summarized mid-way; the
    ledger is what survives. Every candidate goes in as it arrives; every
    verdict is recorded as it lands; the report is written from `ledger.sh list`.
@@ -217,7 +223,11 @@ this window, not from the finders.
      verifier that proves "this code can fail" has not proved "this PR breaks
      production".
    - For a test the PR adds: run it against the base ref (worktree of the
-     merge base). A test that passes without the fix guards nothing.
+     merge base). A test that passes without the fix guards nothing. Then
+     run a negative control: break the fixed line on purpose in a scratch
+     copy; the test must fail. Watch for a test that only checks its own
+     stub (a mock returning `[]` asserted to give `[]`), or one that
+     computes its expected value with the same formula as the code.
    - Trace the real consumer's code for wire-contract claims. Never assert
      behavior from a flag or field name — grep the code that consumes it.
    - Probe endpoints and databases **read-only**, and only within hard rule 3.
@@ -295,6 +305,19 @@ file) go as prose comments or in the review body. Check every anchor with
 diff, pins `commit_id` to the reviewed head, refuses to post if the PR moved,
 and prints what landed. Do this before cleanup.
 
+## Phase 5 — Fixes and reviewer comments (only when asked)
+
+- **Review the fix too.** A fix is new code. Before pushing it, run a short
+  pass on the fix diff: angles 1 and 2, one verifier per candidate. A first
+  fix for a lifecycle gap once carried two new bugs; this pass caught them.
+- **Check a reviewer comment against the code before accepting it.**
+  - A rule the reviewer cites may not exist. Check the file. The ask behind
+    it may still be sound; judge the ask on its own.
+  - "Add a guard for X": first trace every producer of X. If an upstream
+    component would already break on X, a guard downstream hides that bug.
+  - "Use a scoped read" or "match on key K": check which casing and format
+    the storage keys use, and which the caller holds.
+
 ## Cleanup (last)
 
 `scripts/cleanup.sh` removes every worktree the review created, in every repo,
@@ -315,6 +338,10 @@ cause, run it again.
   in production, verify production can actually run it (config, env, migrations,
   the consumer being deployed). "The code is correct" is not the same claim as
   "the PR achieves its goal".
+- **Probe lifecycle windows hard.** Most real bugs in stateful services come
+  from reading a component while it is being torn down and replaced (for
+  example a `rebuildComponents` that sets `handle.dsl` to `null`, then
+  commits a new one). The finder prompts carry the checklist.
 - **Reachable beats possible.** A failure that needs state production does not
   have is latent. Report it as such; never let it take a top slot.
 - **Evidence beats reading.** A 5-minute local probe (run the snippet, diff the

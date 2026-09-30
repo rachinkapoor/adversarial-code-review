@@ -87,6 +87,9 @@ Verdict rules:
 Evidence you are expected to actually gather (read-only, never mutate):
 - Run the suspect code with the suspect input from a throwaway script in
   SCRATCH_DIR.
+- For a test the PR adds: run it on the base (it must fail), then run a
+  negative control — break the fixed line on purpose in a scratch copy; the
+  test must fail again. A test that survives both guards nothing.
 - Read the installed dependency source — not docs, not memory.
 - Check the deployment/infra repos on their CURRENT remote main (git fetch
   first): env vars, secrets, values files this code needs in production.

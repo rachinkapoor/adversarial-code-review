@@ -61,6 +61,25 @@ wrong chunk math, Map/Set aliasing bugs, timezone and precision bugs, type
 mismatches between schema and code, external input used without validation,
 string-built queries or commands (injection), a check on identity or
 permission that a caller can skip, a secret or credential added to the diff.
+
+Lifecycle windows. For every field a teardown or rebuild path sets to null
+and later replaces, find every reader of it and probe:
+- the gap between teardown and commit, including lock waits and network calls;
+- work that runs after commit but outside the lock (a module start, a
+  scheduled callback);
+- every exit: success, rollback, rollback that fails before commit, rollback
+  that fails after commit.
+For a flag that mirrors a component: it must be set at the exact line that
+installs or removes the component, not after a surrounding await returns. On
+failure paths it must come from the real state (`plugin !== null`), never a
+hard-coded value.
+
+Repeated logs. A warning inside a periodic tick fires every tick while a
+failure lasts. It should latch per entity and message, and re-arm on the
+next good read.
+
+Doc wording. Check each claim in a changed doc or comment ("`[]` when …",
+"no open position") against the real filter in the code.
 ```
 
 ## Angle 2 — Removed-behavior auditor
@@ -75,6 +94,9 @@ case.
 For every test the diff ADDS or changes, ask whether it would fail without the
 production change it claims to cover. A test that passes on both sides, or
 that asserts on hand-built input the producer never emits, is a candidate.
+So is a test that only checks its own stub (a mock returning `[]`, asserted
+to give `[]`), and one that computes its expected value with the same formula
+as the code under test.
 
 If this PR is a cherry-pick, port, or backport, also check FIDELITY: diff the
 PR's files against the original source branch (should be identical), and check
