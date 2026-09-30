@@ -1,6 +1,6 @@
 ---
 name: adversarial-code-review
-description: Deep code review for a PR, branch, or diff. Fans out parallel "finder" agents across up to 8 angles (line-by-line bugs, removed behavior, cross-service impact, reuse, simplification, efficiency, altitude, conventions), then adversarially verifies every candidate with real evidence (running code, probing endpoints read-only, checking infra/deployment repos) before reporting at most 10 ranked findings. Use this whenever the user asks to review a PR, diff, branch, or code change, pastes a GitHub PR link, asks "any bugs?", "is this safe to ship/merge/deploy?", "anything blocking the push?", or wants review findings posted as PR comments — even if they never say the word "review".
+description: Deep code review for a PR, branch, or diff. Fans out parallel "finder" agents across up to 8 angles (line-by-line bugs, removed behavior, cross-service impact, reuse, simplification, efficiency, altitude, conventions), then adversarially verifies every candidate with real evidence (running code, probing endpoints read-only, checking infra/deployment repos) before reporting at most 10 ranked findings. Use this whenever the user asks to review a PR, diff, branch, or code change, pastes a GitHub PR link, asks "any bugs?", "is this safe to ship/merge/deploy?", "anything blocking the push?", or wants review findings posted as PR comments, or wants review findings fixed or a reviewer's PR comments checked and addressed — even if they never say the word "review".
 ---
 
 # Adversarial Code Review
@@ -41,13 +41,14 @@ finders, you dedup, you launch the verifiers, you write the report.
    in another repo is a one-line note, never an action item, never a fix.
 5. **Report the question's answer first.** No merge, hold, ordering, or
    rollout-sequencing advice unless asked. The review ends at the findings.
-6. **Settled facts are not questions.** Two kinds of fact settle most of what
+6. **Settled facts are not questions.** Three kinds of fact settle most of what
    agents otherwise dig for: invariants of the system (which service creates
    a resource, who holds a key), which the repo's own code and docs prove;
    and the state of the target environment (what is deployed there, whether
    the touched feature is live there), which differs per environment and is
-   established fresh for every review. Agents get both up front and never
-   re-derive them. An agent that cannot settle a question inside its budget
+   established fresh for every review; and the product or design calls the
+   user already made for this work (Phase 0 step 5). Agents get all three up
+   front and never re-derive them. An agent that cannot settle a question inside its budget
    names the fact it needs and returns; you settle it from the repos or the
    user in one line. Nobody chases it.
 7. **Time is a cost.** Every agent has a tool-call budget. Verifiers start as
@@ -223,11 +224,8 @@ this window, not from the finders.
      verifier that proves "this code can fail" has not proved "this PR breaks
      production".
    - For a test the PR adds: run it against the base ref (worktree of the
-     merge base). A test that passes without the fix guards nothing. Then
-     run a negative control: break the fixed line on purpose in a scratch
-     copy; the test must fail. Watch for a test that only checks its own
-     stub (a mock returning `[]` asserted to give `[]`), or one that
-     computes its expected value with the same formula as the code.
+     merge base), then a negative control (details in the verifier
+     template). A test that passes without the fix guards nothing.
    - Trace the real consumer's code for wire-contract claims. Never assert
      behavior from a flag or field name — grep the code that consumes it.
    - Probe endpoints and databases **read-only**, and only within hard rule 3.
@@ -250,7 +248,8 @@ this window, not from the finders.
    the defect and stop — no fix direction.
 5. A finding that is a design or product choice (behavior, cadence, contract)
    is not a defect. Frame it as a question: "Is this intended?" — the user
-   decides.
+   decides. If it is under Settled decisions in `context.md`, drop it; do
+   not ask.
 6. Say what was ruled out, in one or two lines. "No money-wrong bug survived —
    X, Y, Z were refuted with evidence" is information the user needs; a bare
    findings list hides how hard the diff was pushed.
@@ -307,9 +306,14 @@ and prints what landed. Do this before cleanup.
 
 ## Phase 5 — Fixes and reviewer comments (only when asked)
 
+- **Where the fix is made.** On the PR branch, in a worktree of that branch,
+  never in the review's detached worktrees. Hard rule 2 governs review reads,
+  not the fix.
 - **Review the fix too.** A fix is new code. Before pushing it, run a short
-  pass on the fix diff: angles 1 and 2, one verifier per candidate. A first
-  fix for a lifecycle gap once carried two new bugs; this pass caught them.
+  pass on the fix diff: use a fresh `REVIEW_DIR` (`…-fix`), run
+  `scope.sh --base <reviewed head sha> <branch>`, then angles 1 and 2 plus
+  verifiers as in Phase 2. A first fix for a lifecycle gap once carried two
+  new bugs; this pass caught them.
 - **Check a reviewer comment against the code before accepting it.**
   - A rule the reviewer cites may not exist. Check the file. The ask behind
     it may still be sound; judge the ask on its own.
@@ -325,7 +329,7 @@ and prints `git status --short` for each clone so you can confirm it is
 exactly as you found it. It never runs `git worktree prune` — that silently
 deletes other sessions' stale worktrees. Delete any throwaway probe scripts
 from the scratch directory; `cleanup.sh --all` removes the whole `REVIEW_DIR`
-once the report is delivered and no comments remain to post. If any removal
+once the report is delivered and no comments or Phase 5 work remain. If any removal
 failed it keeps `REVIEW_DIR` and exits non-zero: read its output, fix the
 cause, run it again.
 
@@ -338,10 +342,8 @@ cause, run it again.
   in production, verify production can actually run it (config, env, migrations,
   the consumer being deployed). "The code is correct" is not the same claim as
   "the PR achieves its goal".
-- **Probe lifecycle windows hard.** Most real bugs in stateful services come
-  from reading a component while it is being torn down and replaced (for
-  example a `rebuildComponents` that sets `handle.dsl` to `null`, then
-  commits a new one). The finder prompts carry the checklist.
+- **Probe lifecycle windows hard** (teardown, rebuild, rollback). The
+  checklist is in finder angle 1.
 - **Reachable beats possible.** A failure that needs state production does not
   have is latent. Report it as such; never let it take a top slot.
 - **Evidence beats reading.** A 5-minute local probe (run the snippet, diff the
@@ -349,8 +351,8 @@ cause, run it again.
   leaves plausible. Prefer the probe — within hard rule 3.
 - **A settled fact beats an agent's search.** A finder once spent its whole
   run on a question the orchestrator could have answered from one line of
-  the consumer's code. Establish the invariants and the target environment
-  first, hand them to the agents, and let agents return questions instead
+  the consumer's code. Establish the invariants, the target environment and
+  the settled decisions first, hand them to the agents, and let agents return questions instead
   of chasing them.
 - **Never let an agent's "needs verification" reach the user as fact.** Blocked
   claims stay blocked until verified. Never repeat an agent's "confirmed" you

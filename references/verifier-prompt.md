@@ -16,8 +16,10 @@ Candidate(s): "FULL_CANDIDATE_TEXT — file, line, summary, failure_scenario,
 and any claims the finder made (quote them; each claim is something to
 check)." One verdict per candidate when several are given.
 
-Review context — invariants of the system and the state of the target
-environment, settled by the orchestrator for this review. Do not re-verify;
+Review context — invariants of the system, the state of the target
+environment, and design decisions the user already made, settled by the
+orchestrator for this review. Never return a settled decision as a
+candidate. Do not re-verify;
 do not contradict without repo evidence:
 CONTEXT_BLOCK
 
@@ -84,12 +86,13 @@ Verdict rules:
 - LATENT is a tag, not a verdict. "Feature not live" does not refute a real
   mechanism; it changes where the report places it.
 
-Evidence you are expected to actually gather (read-only, never mutate):
+Evidence you are expected to actually gather (read-only outside SCRATCH_DIR):
 - Run the suspect code with the suspect input from a throwaway script in
   SCRATCH_DIR.
 - For a test the PR adds: run it on the base (it must fail), then run a
-  negative control — break the fixed line on purpose in a scratch copy; the
-  test must fail again. A test that survives both guards nothing.
+  negative control — break the fixed line on purpose in a separate worktree
+  in SCRATCH_DIR (never the review worktree), and remove it after; the test
+  must fail again. A test that passes either run guards nothing.
 - Read the installed dependency source — not docs, not memory.
 - Check the deployment/infra repos on their CURRENT remote main (git fetch
   first): env vars, secrets, values files this code needs in production.

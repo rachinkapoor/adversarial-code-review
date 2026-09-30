@@ -24,8 +24,10 @@ another ref use `git show <ref>:<path>` or `git grep <pattern> <ref> -- <path>`.
 Do not call any network service. Do not open repos that are not listed above;
 a defect in an unlisted repo is out of scope.
 
-Review context — invariants of the system and the state of the target
-environment, settled by the orchestrator for this review. Do not re-verify;
+Review context — invariants of the system, the state of the target
+environment, and design decisions the user already made, settled by the
+orchestrator for this review. Never return a settled decision as a
+candidate. Do not re-verify;
 do not contradict without repo evidence:
 CONTEXT_BLOCK
 
@@ -62,8 +64,10 @@ mismatches between schema and code, external input used without validation,
 string-built queries or commands (injection), a check on identity or
 permission that a caller can skip, a secret or credential added to the diff.
 
-Lifecycle windows. For every field a teardown or rebuild path sets to null
-and later replaces, find every reader of it and probe:
+Lifecycle windows. If the diff touches a teardown, rebuild or swap path: for
+every field it clears (null, undefined, delete, clear) or replaces, find
+every reader of it and probe (example: a `rebuildComponents` that sets
+`handle.dsl` to null, then commits a new one):
 - the gap between teardown and commit, including lock waits and network calls;
 - work that runs after commit but outside the lock (a module start, a
   scheduled callback);
@@ -71,7 +75,7 @@ and later replaces, find every reader of it and probe:
   that fails after commit.
 For a flag that mirrors a component: it must be set at the exact line that
 installs or removes the component, not after a surrounding await returns. On
-failure paths it must come from the real state (`plugin !== null`), never a
+failure paths it must come from the real state (e.g. `component !== null`), never a
 hard-coded value.
 
 Repeated logs. A warning inside a periodic tick fires every tick while a
@@ -79,7 +83,7 @@ failure lasts. It should latch per entity and message, and re-arm on the
 next good read.
 
 Doc wording. Check each claim in a changed doc or comment ("`[]` when …",
-"no open position") against the real filter in the code.
+"no rows match") against the real filter in the code.
 ```
 
 ## Angle 2 — Removed-behavior auditor
@@ -191,7 +195,9 @@ as a violation.
 The angles stay the same. When the diff is configuration rather than code
 (Helm values, Kubernetes manifests, Terraform, CI workflows, SQL migrations,
 alert rules), replace the "Look for" list in Angle 1 with the matching row and
-add the row's extra check to Angle 3. Do not invent new angle names.
+add the row's extra check to Angle 3. Keep the Lifecycle, Repeated logs and
+Doc wording paragraphs; drop Lifecycle when no code runs. Do not invent new
+angle names.
 
 | Diff type | Angle 1 looks for | Angle 3 also checks |
 |---|---|---|

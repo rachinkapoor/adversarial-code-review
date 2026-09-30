@@ -36,7 +36,7 @@ Dependencies for the scripts: bash, git, jq, and gh for PR targets and posting.
   mechanism whose failure needs production state that does not exist yet is
   tagged latent and reported separately, never as a top finding.
 - Nothing reaches the report without a verifier pass or a quoted self-check.
-- Everything is read-only. External systems (vendor APIs, cloud CLIs,
+- Review phases are read-only; fixes (Phase 5) are made only when asked, on the PR branch. External systems (vendor APIs, cloud CLIs,
   production databases) are probed only with the user's go for that review.
 - The report leads with the answer to the question the user actually asked,
   says what was ruled out and what could not be checked, and gives no
